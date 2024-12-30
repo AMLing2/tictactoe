@@ -13,7 +13,7 @@ endif()
 find_package(Curses REQUIRED)
 include_directories(${CURSES_INCLUDE_DIR})
 
-add_executable(${PROJECT_NAME} src/tictactoe.cpp src/tttgame.cpp)
+add_executable(${PROJECT_NAME} src/tictactoe.cpp src/tttgame.cpp src/connScreen.cpp)
 target_link_libraries(${PROJECT_NAME} ${CURSES_LIBRARIES})
 
 #target_include_directories(test PRIVATE ${HOME}/.local/include)
