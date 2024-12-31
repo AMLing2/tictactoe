@@ -3,9 +3,11 @@
 #include <ncurses.h>
 #include <cmath>
 
-Tttgame::Tttgame(int sqrSize_,uint8_t _id)
-  :Iwindow(sqrSize_ * 3 + 2,sqrSize_ * 3 + 2, winNames::tictactoe, _id) //sqrSize *3 + 2
-  ,sqrSize{sqrSize_}
+Tttgame::Tttgame(uint8_t _id, conn_t& _Conn) //FIX: really needs cleaning
+  :Iwindow(4 * 3 + 2,4 * 3 + 2,
+           winNames::tictactoe, _id, _Conn) //sqrSize *3 + 2
+  //:Iwindow(sqrSize * 3 + 2,sqrSize * 3 + 2,
+  //         winNames::tictactoe, _id, _Conn) //sqrSize *3 + 2
   {
     lineChar = has_colors()? ' ' : ' '; //will need to change later
     boardSpots.fill(' ');
@@ -46,6 +48,14 @@ int Tttgame::addToSpot(const uint8_t spot, const char c){
     boardSpots[spot] = c;
     return 0;
   }
+}
+
+
+void Tttgame::handleRecv(char* msgBuf, size_t n){
+
+}
+void Tttgame::passMsg(bool loopback, char* msgBuf, size_t n){
+
 }
 
 void Tttgame::aiPlay(){

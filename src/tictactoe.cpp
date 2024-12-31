@@ -3,9 +3,8 @@
 #include <curses.h>
 #include "tictactoe.hpp"
 #include <memory>
+#include <ncurses.h>
 #include <vector>
-#include <thread>
-#include <chrono>
 
 static volatile sig_atomic_t mainLoopRun{1};
 //err handling
@@ -14,8 +13,9 @@ void INTHandler(int sig){
   mainLoopRun = 0;
 }
 
-//functions
+//Iwindow functions, move in future? ended up with more than expected
 bool Iwindow::checkIdNameMatch(winNames _name, uint8_t _id){
+  //we only care about both matching, add +1 to newID when true
   return ((_name == name) & (_id == id))? true : false;
 }
 
@@ -36,6 +36,16 @@ int Iwindow::moveWin(const int newY, const int newX){
   drawLoc.x = newX;
   return 0;
 }
+
+bool Iwindow::cursorOnWindow(int y, int x){
+  if ( ((x >= drawLoc.x) & (x <= (drawLoc.x + drawLoc.reqX)))&
+        ((y >= drawLoc.y) & (y <= (drawLoc.y + drawLoc.reqY)))){
+    return true;
+  }
+  else {
+    return false;
+  }
+}
 /*
 call at the end of drawScreens()
  */
@@ -53,6 +63,7 @@ needs to be called before first drawScreens()
 also call after any terminal resize or new windows added
 */
 void moveScreens(winVec_t& vWindows,const int max_X){
+  //need fix after +(1,1) was added
   int prevX = 1;
   int prevY = 1;
   int lowestY = 1; //rename to highest? lowest as in bottom of screen
@@ -75,16 +86,59 @@ void moveScreens(winVec_t& vWindows,const int max_X){
 
 void drawScreens(winVec_t& vWindows)
 {
+  int prevX;
+  int prevY;
+  getyx(stdscr,prevY,prevX);
+  //this method is really inneficient due to the linked-list effect of objects
+  //however functionally it works pretty well
   for( std::unique_ptr<Iwindow>& scrWin : vWindows){
     scrWin->drawScreen();
   }
+  move(prevY,prevX);
   refresh();
+}
+template <typename T>
+int addNewWin(winVec_t& vWindows,winNames _name, conn_t& conn){
+  int newID = 0;
+  for (std::unique_ptr<Iwindow>& scrWin : vWindows){
+    if (scrWin->checkIdNameMatch(_name, newID)){
+      newID++;
+    }
+  }
+  vWindows.push_back(std::make_unique<T>(newID,conn));
+  /*
+  //could be done better with a template type but constructors
+  //might be wierd then, might make all constructor have ID as the only arg
+  //in the future then i will change to that method instead.
+  //current constructor inputs other than the id are magic numbers anyways...
+  switch (_name) {
+    case winNames::tictactoe:{
+      vWindows.push_back(std::make_unique<Tttgame>(newID));
+      return 0;
+    }
+    case winNames::mainUI:{
+      vWindows.push_back(std::make_unique<MainUI>(newID));
+      return 0;
+    }
+  }
+  */
+  return 1;
+}
+
+int passKbchar(const char c, winVec_t& vWindows){
+
+  return 0;
 }
 
 void initGameScr(int& max_y, int& max_x)
 {
   initscr();
+  noecho();
+  keypad(stdscr,true); //needed for mouse to work for some reason
+  mmask_t mprev = mousemask(BUTTON1_RELEASED, NULL);//enable mouse L & R
+  mousemask(BUTTON3_RELEASED, &mprev); //3 = right btn
   scrollok(stdscr,true); //allow scrolling if terminal is too small
+  
   if (true){ //fix has_color() returning false
     start_color();
     //            foreground   background
@@ -92,13 +146,35 @@ void initGameScr(int& max_y, int& max_x)
     init_pair(1, COLOR_WHITE, COLOR_RED); //gamelines or borders
     init_pair(2, COLOR_BLACK, COLOR_CYAN); //input fields
   }
+  move(0,0);
   getmaxyx(stdscr, max_y, max_x);
 
 }
 
-int inputLoop(){
+int inputLoop(winVec_t& vWindows){
+  int ch;
+  char chChar;
+  MEVENT mevent;
   while(mainLoopRun){
+    ch = getch();
+    if (((ch >= ' ' ) & (ch <= '}')) //acceptable standard keyboard chars
+    & (ch != '\\') & (ch != '/')){ //could be abused
+      chChar = static_cast<char>(ch & 0xFF);
+      passKbchar(chChar, vWindows);
+      continue;
+    }
 
+    switch (ch) {
+      case KEY_MOUSE:{
+        if (getmouse(&mevent) == OK){
+          if(mevent.bstate & BUTTON1_RELEASED){
+            move(mevent.y,mevent.x);
+            refresh();
+          }
+        }
+        break;
+      }
+    }
   }
   return 0;
 }
@@ -107,15 +183,21 @@ int main () { //int argc, char *argv[]
   signal(SIGINT, INTHandler);
   int max_y, max_x;
   initGameScr(max_y, max_x);
-
+  std::unique_ptr<Connector> pConnector = std::make_unique<Connector>();
   winVec_t vOpenWindows;
-  vOpenWindows.push_back(std::make_unique<Tttgame>(4,0)); //todo, make number based on something
+  addNewWin<Tttgame>(vOpenWindows, winNames::tictactoe, pConnector);
+  addNewWin<MainUI>(vOpenWindows, winNames::mainUI, pConnector);
+  addNewWin<Tttgame>(vOpenWindows, winNames::tictactoe, pConnector);
+  addNewWin<Tttgame>(vOpenWindows, winNames::tictactoe, pConnector);
+  /*
+  vOpenWindows.push_back(std::make_unique<Tttgame>(0)); //todo, make number based on something
   vOpenWindows.push_back(std::make_unique<MainUI>(0));
+  */
 
   moveScreens(vOpenWindows,max_x);
   drawScreens(vOpenWindows);
 
-  inputLoop();
+  inputLoop(vOpenWindows);
   //finish curses, move to function later
   endwin();
   return 0;

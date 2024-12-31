@@ -3,8 +3,8 @@
 #include <ncurses.h>
 #include <string>
 
-MainUI::MainUI(uint8_t _id) //id will probably always be 0?
-  :Iwindow(9,30,winNames::mainUI, _id) //just an estimate for now
+MainUI::MainUI(uint8_t _id, conn_t& _Conn) //id will probably always be 0?
+  :Iwindow(9,30,winNames::mainUI, _id, _Conn) //just an estimate for now
   {
     inputStr.fill(' ');
   }
@@ -56,6 +56,9 @@ int MainUI::drawScreen(){
   return 0;
 }
 
-void MainUI::aiPlay(){
+void MainUI::handleRecv(char* msgBuf, size_t n){
+
+}
+void MainUI::passMsg(bool loopback, char* msgBuf, size_t n){
 
 }
