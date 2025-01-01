@@ -6,7 +6,6 @@
 #include <ncurses.h>
 #include <vector>
 
-static volatile sig_atomic_t mainLoopRun{1};
 //err handling
 void INTHandler(int sig){
   signal(sig, SIG_IGN);//ignore signal
@@ -183,8 +182,9 @@ int main () { //int argc, char *argv[]
   signal(SIGINT, INTHandler);
   int max_y, max_x;
   initGameScr(max_y, max_x);
-  std::unique_ptr<Connector> pConnector = std::make_unique<Connector>();
   winVec_t vOpenWindows;
+  conn_t pConnector = std::make_unique<Connector>(vOpenWindows);
+  //temporary:
   addNewWin<Tttgame>(vOpenWindows, winNames::tictactoe, pConnector);
   addNewWin<MainUI>(vOpenWindows, winNames::mainUI, pConnector);
   addNewWin<Tttgame>(vOpenWindows, winNames::tictactoe, pConnector);

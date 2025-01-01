@@ -18,7 +18,7 @@ void MainUI::drawInput(){// reqY is based on this or other sentences i guess
 
 int MainUI::drawScreen(){
   switch (state) {
-    case connStates::disconnected:{
+    case connStates::unconnected:{
       mvaddstr(drawLoc.y,drawLoc.x,"Disconnected");
       move(drawLoc.y+1,drawLoc.x);
       drawInput();
