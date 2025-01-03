@@ -212,6 +212,6 @@ int main () { //int argc, char *argv[]
   //finish curses, move to function later
   pConnector->endThread(false);
   endwin();
-  std::cout << "rval: " << r <<" errno: "<< errno << std::endl;
+  std::cout << "rval: " << r <<" errno: "<< errno <<" EOMdet: "<<tmpEOMdet<< std::endl;
   return 0;
 }

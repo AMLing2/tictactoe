@@ -136,96 +136,28 @@ int Connector::writeToPipe(char* buff,size_t bufflen){
   return write(pipeFD[1], buff, bufflen);
 }
 
-void Connector::InstanceSocket::mainLoop(){ //ran in a separate thread
+void ABserverClient::mainLoop(){
   //uses poll() to recieve any data from clients or local, where local is
   //through a self-pipe
   //instance specific: echo all recv data to all connected clients
   int pollRN = 0;
-  int acceptFD = 0;
-  socklen_t conAddrLen;
-  struct sockaddr conAddr;
   int fdHandles = 0;
-
-  while(threadLoopRun){
-    pollRN = poll(conFDs, conFDsn_cur, TIMEOUT_);//-1 for infinite block
-    if (pollRN == -1){//error, not sure what to do here for now
-      break;
-    }
-    else if ((pollRN == 0) & (conFDsn_cur < conFDsn_max)){//timeout, check for accept()
-      //TODO: move to own virtual function?
-      //NOTE: there is a way to use poll() to check for accept rather than
-      //polling it manually, but i cant find anywhere in the manpages what
-      //FD to poll to check this, it only mentions that its possible
-      conAddrLen = 0; //initialize variables
-      std::memset(&conAddr,0,sizeof(conAddr));
-      acceptFD = accept(selfSocket,
-             &conAddr, //TODO: not using this for anything currently, maybe log?
-             &conAddrLen);
-      //add to conFDs list
-      if (acceptFD < 0){ //TODO: move to own function?
-        if ((errno == EAGAIN) | (errno == EWOULDBLOCK)){
-          continue; //no accept pending
-        }
-        else{
-          //actual error, ignore for now
-        }
-      }
-      else { // add to poll list
-        conFDs[conFDsn_cur].fd = acceptFD;
-        conFDs[conFDsn_cur].events = POLLIN | POLLHUP;
-        conFDs[conFDsn_cur].revents = 0; //initialize return to zero
-        conFDsn_cur++;
-      }
-    }
-    else{//data to read
-      //loop through conFDs.revents to find which FD notified
-      fdHandles = 0; //break if all the FDs were handled, no point checking rest
-      for (nfds_t i = 0; (i < conFDsn_cur) & 
-                      (fdHandles < pollRN); i++){
-        if (conFDs[i].revents != 0){
-          fdHandles++;
-          switch(conFDs[i].revents){
-            case POLLHUP: {//client quit, remove FD
-              close(conFDs[i].fd);
-              fdArrRem(conFDs,i,conFDsn_cur);
-              break;
-            }
-            case POLLIN: { //data to be read
-              if (i == 0){ //pipe
-                bufRecvn = read(conFDs[i].fd, recvBuffer.data(), recvBuffer.size());
-                if ((recvBuffer[0] == 25) & (bufRecvn == 2)){
-                  threadLoopRun = false;//should this be done only through endThread()?
-                  break;
-                }
-                else { //temp
-                  const std::lock_guard<std::mutex> lock(drawMtx);
-                  move(1,1);
-                  for (size_t i = 0; i < bufRecvn; i++){
-                    addch(recvBuffer[i]); //temp
-                  }
-                }
-              }
-              else {//socket
-
-              } 
-
-            }
-          }
-        }
-      }
-    }
+  int pollTimeout;
+  if (isInstance){
+    pollTimeout = -1;
+  } 
+  else{
+    pollTimeout = TIMEOUT_;
   }
-}
-//FIX: ^v these two really need to be combined to one
-void Connector::ClientSocket::mainLoop(){ //ran in a separate thread
-  //uses poll() to recieve any data from clients or local, where local is
-  //through a self-pipe
-  //instance specific: echo all recv data to all connected clients
-  int pollRN = 0;
-  int fdHandles = 0;
 
+  int a = 0; //temp
   while(threadLoopRun){
-    pollRN = poll(conFDs, conFDsn_cur, -1);//-1 for infinite block
+    pollRN = poll(conFDs, conFDsn_cur, pollTimeout);//-1 for infinite block
+    a++;
+    move(5,5);
+    addstr(std::to_string(a).c_str());
+    refresh();
+
     if (pollRN == -1){//error, not sure what to do here for now
       move(7,2);
       char str[19] = {"ERROR!!! !!!!!!!!!"};
@@ -233,7 +165,11 @@ void Connector::ClientSocket::mainLoop(){ //ran in a separate thread
       refresh();
       break;
     }
-    else if (pollRN == 0){ //timeout, do nothing
+    else if (pollRN == 0){ //timeout, check accpetFunc()
+      //NOTE: there is a way to use poll() to check for accept rather than
+      //polling it manually, but i cant find anywhere in the manpages what
+      //FD to poll to check this, it only mentions that its possible
+      acceptFunc();
       continue;
     }
     else{//data to read
@@ -252,7 +188,9 @@ void Connector::ClientSocket::mainLoop(){ //ran in a separate thread
             case POLLIN: { //data to be read
               if (i == 0){ //pipe
                 bufRecvn = read(conFDs[i].fd, recvBuffer.data(), recvBuffer.size());
-                if ((recvBuffer[0] == '\u0019') & (bufRecvn == 2)){
+                //if ((recvBuffer[0] == '\u0019') & (bufRecvn == 2)){
+                if (recvBuffer[0] == '\u0019'){ //FIX: need to make this better
+                  tmpEOMdet = 1;
                   threadLoopRun = false;//should this be done only through endThread()?
                   break;
                 }
@@ -272,13 +210,44 @@ void Connector::ClientSocket::mainLoop(){ //ran in a separate thread
           }
         }
         /*
-        else { // is zero, ignore
+        else { //revents is zero, ignore
 
         }
         */
       }
     }
   }
+}
+
+int Connector::InstanceSocket::acceptFunc(){
+  socklen_t conAddrLen = 0;
+  struct sockaddr conAddr;
+  int acceptFD = 0;
+  std::memset(&conAddr,0,sizeof(conAddr));
+
+  acceptFD = accept(selfSocket,
+         &conAddr, //TODO: not using this for anything currently, maybe log?
+         &conAddrLen);
+  //add to conFDs list
+  if (acceptFD < 0){
+    if ((errno == EAGAIN) | (errno == EWOULDBLOCK)){
+      return 1; //no accept pending
+    }
+    else{
+      //actual error, ignore for now
+    }
+  }
+  else { // add to poll list
+    conFDs[conFDsn_cur].fd = acceptFD;
+    conFDs[conFDsn_cur].events = POLLIN | POLLHUP;
+    conFDs[conFDsn_cur].revents = 0; //initialize return to zero
+    conFDsn_cur++;
+  }
+  return 0;
+}
+
+int Connector::ClientSocket::acceptFunc(){
+  return 0; //do nothing, wont be called as poll() wont timeout as client
 }
 
 Connector::Connector(winVec_t& _vWindows)
@@ -327,14 +296,4 @@ Connector::~Connector(){
   close(pipeFD[0]);
   close(pipeFD[1]);
   endThread(false);
-}
-//functions for scoped classes
-
-int Connector::InstanceSocket::mainFunc(){
-  return 0;
-}
-
-int Connector::ClientSocket::mainFunc(){
-  //connect
-  return 0;
 }

@@ -27,6 +27,7 @@ typedef std::vector<std::unique_ptr<Iwindow>> winVec_t;
 
 static volatile sig_atomic_t mainLoopRun{1};
 inline std::mutex drawMtx;
+inline int tmpEOMdet = 0;
 
 enum class winNames : uint8_t {
 tictactoe = 1,
@@ -43,19 +44,19 @@ struct ScreenLoc {
 class ABserverClient{
 public:
   virtual ~ABserverClient() = default;
-  virtual int mainFunc() = 0;
   const bool isInstance;
   std::atomic<bool> threadLoopRun{true};
   std::thread tThread;
   void startThread();
 protected:
+  virtual int acceptFunc() = 0;
+  void mainLoop();
   size_t bufRecvn;
   const int maxConnections;
   std::array<char,BUFFSIZE_> recvBuffer;
   const nfds_t conFDsn_max;
   nfds_t conFDsn_cur;
   struct pollfd* conFDs;
-  virtual void mainLoop() = 0;
   const int instPort{57384};
   int selfSocket;
   sockaddr_in serverAddress;
@@ -81,17 +82,15 @@ private:
   public:
     ClientSocket(int pipeReadFD);
     ~ClientSocket();
-    int mainFunc() override;
   private:
-    void mainLoop() override;
+    int acceptFunc() override;
   };
   class InstanceSocket : public ABserverClient {
   public:
     InstanceSocket(int maxConns_, int pipeReadFD);
     ~InstanceSocket();
-    int mainFunc() override;
   private:
-    void mainLoop() override;
+    int acceptFunc() override;
   };
 };
 
