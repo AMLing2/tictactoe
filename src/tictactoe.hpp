@@ -2,13 +2,21 @@
 #define TICTACTOE
 
 #include <array>
+#include <atomic>
 #include <csignal>
 #include <cstdint>
 #include <ncurses.h>
+#include <sys/poll.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <memory>
+#include <thread>
 #include <vector>
+#include <atomic>
+#include <mutex>
+
+#define MAXCONNECTIONS_ 5
+#define TIMEOUT_ 5000
 
 class Connector;
 class Iwindow;
@@ -17,6 +25,7 @@ typedef std::unique_ptr<Connector> conn_t;
 typedef std::vector<std::unique_ptr<Iwindow>> winVec_t;
 
 static volatile sig_atomic_t mainLoopRun{1};
+inline std::mutex drawMtx;
 
 enum class winNames : uint8_t {
 tictactoe = 1,
@@ -35,42 +44,50 @@ public:
   virtual ~ABserverClient() = default;
   virtual int mainFunc() = 0;
   const bool isInstance;
-
+  std::atomic<bool> threadLoopRun{true};
+  std::thread tThread;
+  void startThread();
 protected:
+  const nfds_t conFDsn_max;
+  nfds_t conFDsn_cur;
+  struct pollfd* conFDs;
+  virtual void mainLoop() = 0;
   const int instPort{57384};
-  const int maxConnections{5}; // 5 is temp
+  const int maxConnections;
   int selfSocket;
   sockaddr_in serverAddress;
   int startSocket();
-  ABserverClient(bool isInstance_)
-    :isInstance(isInstance_)
-    { startSocket(); }
+  ABserverClient(bool isInstance_,int maxConns_, int pipeReadFD);
 };
 
 class Connector{
 public:
   int loopbackData();
-  Connector(winVec_t& _vWindows)
-  :vWindows{_vWindows} {}
+  Connector(winVec_t& _vWindows);
+  ~Connector();
+  int endThread(int selfWriteFD, bool restartT);
 private:
+  int pipeFD[2]; // [0] = read end FD, [1] = write end FD
   int startClientorInstance(bool isClient, bool replacePtr);
-  void mainLoop();
   winVec_t& vWindows;
   std::unique_ptr<ABserverClient> serverClient;
-
+//FIX: this is starting to get clunky and annoying, might just make it all
+  //into one class
   class ClientSocket : public ABserverClient {
   public:
-    ClientSocket();
+    ClientSocket(int pipeReadFD);
+    ~ClientSocket();
     int mainFunc() override;
-
+  private:
+    void mainLoop() override;
   };
   class InstanceSocket : public ABserverClient {
   public:
-    InstanceSocket();
+    InstanceSocket(int maxConns_, int pipeReadFD);
+    ~InstanceSocket();
     int mainFunc() override;
   private:
-    std::array<int, 5> conSockets;
-
+    void mainLoop() override;
   };
 };
 

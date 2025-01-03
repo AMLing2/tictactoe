@@ -3,6 +3,7 @@
 #include <curses.h>
 #include "tictactoe.hpp"
 #include <memory>
+#include <mutex>
 #include <ncurses.h>
 #include <vector>
 
@@ -87,6 +88,7 @@ void drawScreens(winVec_t& vWindows)
 {
   int prevX;
   int prevY;
+  const std::lock_guard<std::mutex> lock(drawMtx);
   getyx(stdscr,prevY,prevX);
   //this method is really inneficient due to the linked-list effect of objects
   //however functionally it works pretty well
