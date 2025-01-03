@@ -6,6 +6,7 @@
 #include <mutex>
 #include <ncurses.h>
 #include <vector>
+#include <iostream>
 
 //err handling
 void INTHandler(int sig){
@@ -152,23 +153,29 @@ void initGameScr(int& max_y, int& max_x)
 
 }
 
-int inputLoop(winVec_t& vWindows){
+int inputLoop(winVec_t& vWindows, conn_t& pconn){
   int ch;
   char chChar;
   MEVENT mevent;
+  const size_t tempBuffN = 7; //temp
+  char tempBuff[tempBuffN] = {"hello!"};
+
   while(mainLoopRun){
     ch = getch();
     if (((ch >= ' ' ) & (ch <= '}')) //acceptable standard keyboard chars
-    & (ch != '\\') & (ch != '/')){ //could be abused
+    & (ch != '\\') & (ch != '/')){ //could be abused?
       chChar = static_cast<char>(ch & 0xFF);
       passKbchar(chChar, vWindows);
+      if (pconn->writeToPipe(tempBuff,tempBuffN) < 0){
+        return 1;
+      }
       continue;
     }
 
     switch (ch) {
       case KEY_MOUSE:{
         if (getmouse(&mevent) == OK){
-          if(mevent.bstate & BUTTON1_RELEASED){
+          if (mevent.bstate & BUTTON1_RELEASED){
             move(mevent.y,mevent.x);
             refresh();
           }
@@ -183,9 +190,11 @@ int inputLoop(winVec_t& vWindows){
 int main () { //int argc, char *argv[]
   signal(SIGINT, INTHandler);
   int max_y, max_x;
-  initGameScr(max_y, max_x);
   winVec_t vOpenWindows;
   conn_t pConnector = std::make_unique<Connector>(vOpenWindows);
+  //int a;
+  //std::cin>>a; //for debugging: wait for enter to start
+  initGameScr(max_y, max_x);
   //temporary:
   addNewWin<Tttgame>(vOpenWindows, winNames::tictactoe, pConnector);
   addNewWin<MainUI>(vOpenWindows, winNames::mainUI, pConnector);
@@ -199,8 +208,10 @@ int main () { //int argc, char *argv[]
   moveScreens(vOpenWindows,max_x);
   drawScreens(vOpenWindows);
 
-  inputLoop(vOpenWindows);
+  int r = inputLoop(vOpenWindows,pConnector);
   //finish curses, move to function later
+  pConnector->endThread(false);
   endwin();
+  std::cout << "rval: " << r <<" errno: "<< errno << std::endl;
   return 0;
 }

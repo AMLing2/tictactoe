@@ -59,6 +59,3 @@ int MainUI::drawScreen(){
 void MainUI::handleRecv(char* msgBuf, size_t n){
 
 }
-void MainUI::passMsg(bool loopback, char* msgBuf, size_t n){
-
-}

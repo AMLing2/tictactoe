@@ -17,6 +17,7 @@
 
 #define MAXCONNECTIONS_ 5
 #define TIMEOUT_ 5000
+#define BUFFSIZE_ 5000
 
 class Connector;
 class Iwindow;
@@ -48,12 +49,14 @@ public:
   std::thread tThread;
   void startThread();
 protected:
+  size_t bufRecvn;
+  const int maxConnections;
+  std::array<char,BUFFSIZE_> recvBuffer;
   const nfds_t conFDsn_max;
   nfds_t conFDsn_cur;
   struct pollfd* conFDs;
   virtual void mainLoop() = 0;
   const int instPort{57384};
-  const int maxConnections;
   int selfSocket;
   sockaddr_in serverAddress;
   int startSocket();
@@ -65,7 +68,8 @@ public:
   int loopbackData();
   Connector(winVec_t& _vWindows);
   ~Connector();
-  int endThread(int selfWriteFD, bool restartT);
+  int endThread(bool restartT);
+  int writeToPipe(char* buff,size_t bufflen);
 private:
   int pipeFD[2]; // [0] = read end FD, [1] = write end FD
   int startClientorInstance(bool isClient, bool replacePtr);
@@ -97,7 +101,6 @@ public:
   virtual ~Iwindow() = default;
   virtual int drawScreen() = 0; //pure virtual
   virtual void handleRecv(char* msgBuf, size_t n) = 0;
-  virtual void passMsg(bool loopback, char* msgBuf, size_t n) = 0;
   //virtual int updateFromRecv(char* buffer) = 0;
   bool cursorOnWindow(int y, int x);
   bool checkIfFit(const int desX, const int max_X);
@@ -125,7 +128,6 @@ public:
   //draws win/losses of players, connection screen and new window bar
   int drawScreen() override;
   void handleRecv(char* msgBuf, size_t n) override;
-  void passMsg(bool loopback, char* msgBuf, size_t n) override;
 
 private:
   enum class connStates {
@@ -147,7 +149,6 @@ public:
   Tttgame(uint8_t _id, conn_t& _Conn);
   int drawScreen() override;
   void handleRecv(char* msgBuf, size_t n) override;
-  void passMsg(bool loopback, char* msgBuf, size_t n) override;
   //int updateFromRecv(char* buffer) override { return 0; };//temp
   /*
    s: 0-8, where 0 is top left

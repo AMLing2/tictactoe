@@ -54,9 +54,6 @@ int Tttgame::addToSpot(const uint8_t spot, const char c){
 void Tttgame::handleRecv(char* msgBuf, size_t n){
 
 }
-void Tttgame::passMsg(bool loopback, char* msgBuf, size_t n){
-
-}
 
 void Tttgame::aiPlay(){
   
