@@ -51,7 +51,7 @@ int Tttgame::addToSpot(const uint8_t spot, const char c){
 }
 
 
-void Tttgame::handleRecv(char* msgBuf, size_t n){
+void Tttgame::handleRecv(void* msgBuf, size_t n){
 
 }
 

@@ -56,6 +56,6 @@ int MainUI::drawScreen(){
   return 0;
 }
 
-void MainUI::handleRecv(char* msgBuf, size_t n){
+void MainUI::handleRecv(void* msgBuf, size_t n){
 
 }

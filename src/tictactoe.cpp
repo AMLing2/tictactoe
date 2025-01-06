@@ -99,14 +99,18 @@ void drawScreens(winVec_t& vWindows)
   move(prevY,prevX);
   refresh();
 }
+
 template <typename T>
-int addNewWin(winVec_t& vWindows,winNames _name, conn_t& conn){
+int addNewWin(winVec_t& vWindows, conn_t& conn){ //,winNames _name
+  /*
   int newID = 0;
   for (std::unique_ptr<Iwindow>& scrWin : vWindows){
     if (scrWin->checkIdNameMatch(_name, newID)){
       newID++;
     }
   }
+  */
+  int newID = vWindows.size(); //ID is no longer window specific
   vWindows.push_back(std::make_unique<T>(newID,conn));
   /*
   //could be done better with a template type but constructors
@@ -157,8 +161,8 @@ int inputLoop(winVec_t& vWindows, conn_t& pconn){
   int ch;
   char chChar;
   MEVENT mevent;
-  const size_t tempBuffN = 7; //temp
-  char tempBuff[tempBuffN] = {"hello!"};
+  const size_t tempBuffN = 14; //temp
+  char tempBuff[tempBuffN] = {"helloooooooo!"};
 
   while(mainLoopRun){
     ch = getch();
@@ -196,10 +200,10 @@ int main () { //int argc, char *argv[]
   //std::cin>>a; //for debugging: wait for enter to start
   initGameScr(max_y, max_x);
   //temporary:
-  addNewWin<Tttgame>(vOpenWindows, winNames::tictactoe, pConnector);
-  addNewWin<MainUI>(vOpenWindows, winNames::mainUI, pConnector);
-  addNewWin<Tttgame>(vOpenWindows, winNames::tictactoe, pConnector);
-  addNewWin<Tttgame>(vOpenWindows, winNames::tictactoe, pConnector);
+  addNewWin<Tttgame>(vOpenWindows, pConnector);
+  addNewWin<MainUI>(vOpenWindows, pConnector);
+  addNewWin<Tttgame>(vOpenWindows, pConnector);
+  addNewWin<Tttgame>(vOpenWindows, pConnector);
   /*
   vOpenWindows.push_back(std::make_unique<Tttgame>(0)); //todo, make number based on something
   vOpenWindows.push_back(std::make_unique<MainUI>(0));

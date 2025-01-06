@@ -1,4 +1,5 @@
 #include "tictactoe.hpp"
+#include <algorithm>
 #include <array>
 #include <asm-generic/socket.h>
 #include <cerrno>
@@ -35,8 +36,17 @@ void fdArrRem(struct pollfd* conFDs,const nfds_t i, nfds_t& conFD_cur){
   }
 }
 
-bool checkBitSet(int toCheck, int bit){//for comparing C bit macros
-  return true; //TODO: make
+bool chkBitSet(int chk, int bit){//for comparing C bit macros
+  return (chk & bit);
+}
+
+ssize_t getDataSize(const ssize_t retnBytes){
+  if (retnBytes <= 2){ //2 = # of fields before data array
+    return  -1;
+  }
+  else {
+    return retnBytes - 2;
+  }
 }
 
 int Connector::startClientorInstance(bool isClient, bool replacePtr){
@@ -44,13 +54,13 @@ int Connector::startClientorInstance(bool isClient, bool replacePtr){
     //swap state between client <-> instance, isClient is ignored unless nullptr
     if (serverClient->isInstance){
       serverClient.reset(
-        std::make_unique<Connector::ClientSocket>(pipeFD[0]).release());
+        std::make_unique<Connector::ClientSocket>(pipeFD[0], vWindows).release());
       //bascially the same as .reset(new Connector::ClientSocket) but slightly safer
     }
     else{//pipeFD[0] = read end, [1] = write end
       serverClient.reset(
         std::make_unique<Connector::InstanceSocket>(MAXCONNECTIONS_,
-                                                    pipeFD[0]).release());
+                                                    pipeFD[0], vWindows).release());
     }
     return 0;
   }
@@ -59,16 +69,35 @@ int Connector::startClientorInstance(bool isClient, bool replacePtr){
   }
   //create unitialized
   //serverClient = isClient? std::make_unique<Connector::ClientSocket>()
-  //                        :std::make_unique<Connector::InstanceSocket>();
+  //                 :std::make_unique<Connector::InstanceSocket>();
   //short if didnt work :'(
   if (isClient){
-    serverClient = std::make_unique<Connector::ClientSocket>(pipeFD[0]);
+    serverClient = std::make_unique<Connector::ClientSocket>(pipeFD[0], vWindows);
   }
   else{
     serverClient = std::make_unique<Connector::InstanceSocket>(MAXCONNECTIONS_,
-                                                               pipeFD[0]);
+                                                               pipeFD[0], vWindows);
   }
   return 0;
+}
+
+//TODO: combine loopbackData() and writeToPipe() to this single func
+template <typename T, size_t dataSize>
+int Connector::sendMsgStruct(bool sendLocal, Message<T, dataSize>& sendData){
+  std::array<T, dataSize + 2> newMsg; //HACK: kinda unsure about this one...
+  newMsg[0] = sendData.action; 
+  newMsg[1] = sendData.winID; 
+  std::copy(sendData.data.begin(),sendData.data.end(),newMsg.at(2));
+  if (sendLocal){
+    for (std::unique_ptr<Iwindow>& _win : vWindows){
+      if (_win->id == sendData.winID){ //send data to the window off-thread first
+        _win->handleRecv(newMsg.data(),newMsg.size());
+      }
+    }
+  }
+  write(pipeFD[1], newMsg.data(), newMsg.size());
+  return 0;
+  //return write(pipeFD[1], buff, bufflen);
 }
 
 int Connector::loopbackData(){
@@ -111,23 +140,24 @@ int ABserverClient::startSocket(){
   }
   return 0;
 }
-void ABserverClient::startThread(){
+void ABserverClient::startThread(winVec_t& _vWindows){
   threadLoopRun = true; //intiialized twice here?
-  tThread = std::thread([this](){
-    mainLoop();
+  tThread = std::thread([this,&_vWindows](){
+    mainLoop(_vWindows);
   });
 }
 
 int Connector::endThread(bool restartT){
   serverClient->threadLoopRun = false;
   const size_t bufSize = 2;
-  char buf[bufSize] = {'\u0019','a'}; //EOM,\0
+  char buf[bufSize] = {'\0','\0'}; //EOM,\0
   writeToPipe(buf, bufSize);
   if (serverClient->tThread.joinable()){
     serverClient->tThread.join();
   }
   if (restartT){
-    serverClient->startThread(); //NOTE:not sure if this will be used ever
+    serverClient->startThread(vWindows); //NOTE:not sure if this will be used ever
+                                 //nevermind it will be for disconnect
   }
   return 0;
 }
@@ -136,7 +166,7 @@ int Connector::writeToPipe(char* buff,size_t bufflen){
   return write(pipeFD[1], buff, bufflen);
 }
 
-void ABserverClient::mainLoop(){
+void ABserverClient::mainLoop(winVec_t& _vWindows){
   //uses poll() to recieve any data from clients or local, where local is
   //through a self-pipe
   //instance specific: echo all recv data to all connected clients
@@ -144,15 +174,16 @@ void ABserverClient::mainLoop(){
   int fdHandles = 0;
   int pollTimeout;
   if (isInstance){
-    pollTimeout = -1;
+    pollTimeout = -1; //-1 for infinite block
   } 
   else{
     pollTimeout = TIMEOUT_;
   }
 
+  std::cout<<"mainloop thread starting"<<std::endl; //temp
   int a = 0; //temp
   while(threadLoopRun){
-    pollRN = poll(conFDs, conFDsn_cur, pollTimeout);//-1 for infinite block
+    pollRN = poll(conFDs, conFDsn_cur, pollTimeout);
     a++;
     move(5,5);
     addstr(std::to_string(a).c_str());
@@ -165,10 +196,8 @@ void ABserverClient::mainLoop(){
       refresh();
       break;
     }
-    else if (pollRN == 0){ //timeout, check accpetFunc()
-      //NOTE: there is a way to use poll() to check for accept rather than
-      //polling it manually, but i cant find anywhere in the manpages what
-      //FD to poll to check this, it only mentions that its possible
+    else if (pollRN == 0){ //timeout, check acceptFunc()
+      //TODO: add poll on FD you get from socket() to check accept()
       acceptFunc();
       continue;
     }
@@ -179,7 +208,8 @@ void ABserverClient::mainLoop(){
                       (fdHandles < pollRN); i++){
         if (conFDs[i].revents != 0){
           fdHandles++;
-          switch(conFDs[i].revents){
+        //should change to bit check rather than swtich case as they might be OR'ed
+          switch(conFDs[i].revents){ 
             case POLLHUP: {//server killed connection, remove FD
               close(conFDs[i].fd);
               fdArrRem(conFDs,i,conFDsn_cur);
@@ -188,23 +218,37 @@ void ABserverClient::mainLoop(){
             case POLLIN: { //data to be read
               if (i == 0){ //pipe
                 bufRecvn = read(conFDs[i].fd, recvBuffer.data(), recvBuffer.size());
-                //if ((recvBuffer[0] == '\u0019') & (bufRecvn == 2)){
-                if (recvBuffer[0] == '\u0019'){ //FIX: need to make this better
+                if (recvBuffer[0] == msgActions::endThread){
                   tmpEOMdet = 1;
                   threadLoopRun = false;//should this be done only through endThread()?
                   break;
                 }
-                else { //temp
+                else {  //data to be sent from a window
+                  sendConnected();
+
+                  //FIX: temp
                   const std::lock_guard<std::mutex> lock(drawMtx);
                   move(1,1);
                   for (size_t i = 0; i < bufRecvn; i++){
-                    addch(recvBuffer[i]); //TODO:temp
+                    addch(recvBuffer[i]);
                   }
                   refresh();
                 }
               }
-              else {//socket
+              else {//socket recv
+                bufRecvn = recv(conFDs[i].fd, 
+                                recvBuffer.data(), recvBuffer.size(), 0);
+                if (bufRecvn < 3){ //error
 
+                }
+                else {
+                  for (std::unique_ptr<Iwindow>& _win : _vWindows){
+                    if (_win->id == recvBuffer.at(2)){ //send data to the window off-thread first
+                      _win->handleRecv(recvBuffer.data(),bufRecvn);
+                    }
+                  }
+
+                }
               }
             }
           }
@@ -219,14 +263,29 @@ void ABserverClient::mainLoop(){
   }
 }
 
+int ABserverClient::sendConnected(){
+  if (conFDsn_cur <= 1){
+    return 1;
+  }
+  else{
+    for (int i = 1; i < conFDsn_cur; i++){
+      send(conFDs[i].fd, recvBuffer.data(), bufRecvn, 0);
+    }
+    return 0;
+  }
+}
+
 int Connector::InstanceSocket::acceptFunc(){
+  //NOTE: there is a way to use poll() to check for accept rather than
+  //polling it manually, but i cant find anywhere in the manpages what
+  //FD to poll to check this, it only mentions that its possible
   socklen_t conAddrLen = 0;
   struct sockaddr conAddr;
   int acceptFD = 0;
   std::memset(&conAddr,0,sizeof(conAddr));
 
   acceptFD = accept(selfSocket,
-         &conAddr, //TODO: not using this for anything currently, maybe log?
+         &conAddr, //TODO: not using this for anything currently, add logging
          &conAddrLen);
   //add to conFDs list
   if (acceptFD < 0){
@@ -270,16 +329,16 @@ ABserverClient::ABserverClient(bool isInstance_,int maxConns_, int pipeReadFD)
   conFDsn_cur = 1;
 }
 
-Connector::InstanceSocket::InstanceSocket(int maxConns_, int pipeReadFD)
+Connector::InstanceSocket::InstanceSocket(int maxConns_, int pipeReadFD, winVec_t& _vWindows)
   :ABserverClient(true, maxConns_, pipeReadFD)
 {
-  startThread(); //move to ABserverClient constructor?
+  startThread(_vWindows); //move to ABserverClient constructor?
 }
 
-Connector::ClientSocket::ClientSocket(int pipeReadFD)
+Connector::ClientSocket::ClientSocket(int pipeReadFD, winVec_t& _vWindows)
   :ABserverClient(false, 1, pipeReadFD)
 {
-  startThread();
+  startThread(_vWindows);
 }
 //destructors
 Connector::InstanceSocket::~InstanceSocket(){

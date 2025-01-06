@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <csignal>
+#include <cstddef>
 #include <cstdint>
 #include <ncurses.h>
 #include <sys/poll.h>
@@ -11,13 +12,13 @@
 #include <netinet/in.h>
 #include <memory>
 #include <thread>
+#include <unistd.h>
 #include <vector>
-#include <atomic>
 #include <mutex>
 
 #define MAXCONNECTIONS_ 5
 #define TIMEOUT_ 5000
-#define BUFFSIZE_ 5000
+#define BUFFSIZE_ 256
 
 class Connector;
 class Iwindow;
@@ -41,20 +42,41 @@ struct ScreenLoc {
   ScreenLoc(int ySize, int xSize) : reqY(ySize) , reqX(xSize) {}
 };
 
+/* Converts recieved bytes from recv() for use in dataSize input to Message struct*/
+ssize_t getDataSize(const ssize_t retnBytes);
+enum msgActions {
+endThread = 0,
+mainUI = 1,
+};
+/*
+ data is sent in the format:
+ 0:  [uint8_t action]
+ 1:  [uint8_t window ID]
+ 2:  [std::array<uint8_t or char> window specific data]
+ */
+template <typename T, size_t dataSize>
+struct Message{
+  uint8_t action;
+  uint8_t winID;
+  std::array<T, dataSize> data;
+};
+
 class ABserverClient{
 public:
   virtual ~ABserverClient() = default;
   const bool isInstance;
   std::atomic<bool> threadLoopRun{true};
   std::thread tThread;
-  void startThread();
+  void startThread(winVec_t& _vWindows);
 protected:
   virtual int acceptFunc() = 0;
-  void mainLoop();
-  size_t bufRecvn;
+  int sendConnected();
+  void mainLoop(winVec_t& _vWindows);
+  ssize_t bufRecvn;
+  std::array<uint8_t,BUFFSIZE_> recvBuffer;
   const int maxConnections;
-  std::array<char,BUFFSIZE_> recvBuffer;
   const nfds_t conFDsn_max;
+  //conFDs[0] is always the pipe read FD
   nfds_t conFDsn_cur;
   struct pollfd* conFDs;
   const int instPort{57384};
@@ -66,28 +88,31 @@ protected:
 
 class Connector{
 public:
+  template <typename T, size_t dataSize>
+  int sendMsgStruct(bool sendLocal, Message<T, dataSize>& sendData);
+  /* send data from one window to another locally */
   int loopbackData();
   Connector(winVec_t& _vWindows);
   ~Connector();
   int endThread(bool restartT);
+  /* send data to clients or server instance through thread */
   int writeToPipe(char* buff,size_t bufflen);
 private:
   int pipeFD[2]; // [0] = read end FD, [1] = write end FD
   int startClientorInstance(bool isClient, bool replacePtr);
   winVec_t& vWindows;
   std::unique_ptr<ABserverClient> serverClient;
-//FIX: this is starting to get clunky and annoying, might just make it all
-  //into one class
+
   class ClientSocket : public ABserverClient {
   public:
-    ClientSocket(int pipeReadFD);
+    ClientSocket(int pipeReadFD, winVec_t& _vWindows);
     ~ClientSocket();
   private:
     int acceptFunc() override;
   };
   class InstanceSocket : public ABserverClient {
   public:
-    InstanceSocket(int maxConns_, int pipeReadFD);
+    InstanceSocket(int maxConns_, int pipeReadFD, winVec_t& _vWindows);
     ~InstanceSocket();
   private:
     int acceptFunc() override;
@@ -99,7 +124,7 @@ class Iwindow{
 public:
   virtual ~Iwindow() = default;
   virtual int drawScreen() = 0; //pure virtual
-  virtual void handleRecv(char* msgBuf, size_t n) = 0;
+  virtual void handleRecv(void* msgBuf, size_t n) = 0;
   //virtual int updateFromRecv(char* buffer) = 0;
   bool cursorOnWindow(int y, int x);
   bool checkIfFit(const int desX, const int max_X);
@@ -107,16 +132,16 @@ public:
   int getWidth() {return drawLoc.x + drawLoc.reqX + 1;};
   int moveWin(const int newY, const int newX);
   bool checkIdNameMatch(winNames _name,uint8_t _id);
+  const uint8_t id; //max 256 of the same window at once
 
 protected:
   ScreenLoc drawLoc;
   const winNames name;
-  const uint8_t id; //max 256 of the same window at once
   conn_t& conn;
   Iwindow(int yReq,int xReq,winNames _name,uint8_t _id, conn_t& _Conn) //maybe move
     :drawLoc(yReq, xReq)
-    ,name{_name}
     ,id{_id}
+    ,name{_name}
     ,conn{_Conn} {};
 };
 
@@ -126,7 +151,7 @@ public:
   //using state method design pattern for drawing
   //draws win/losses of players, connection screen and new window bar
   int drawScreen() override;
-  void handleRecv(char* msgBuf, size_t n) override;
+  void handleRecv(void* msgBuf, size_t n) override;
 
 private:
   enum class connStates {
@@ -147,7 +172,7 @@ class Tttgame : public Iwindow {
 public:
   Tttgame(uint8_t _id, conn_t& _Conn);
   int drawScreen() override;
-  void handleRecv(char* msgBuf, size_t n) override;
+  void handleRecv(void* msgBuf, size_t n) override;
   //int updateFromRecv(char* buffer) override { return 0; };//temp
   /*
    s: 0-8, where 0 is top left
