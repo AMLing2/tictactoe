@@ -45,8 +45,11 @@ struct ScreenLoc {
 /* Converts recieved bytes from recv() for use in dataSize input to Message struct*/
 ssize_t getDataSize(const ssize_t retnBytes);
 enum msgActions {
-endThread = 0,
-mainUI = 1,
+endThread = 0,    //to self, end thread
+newData = 1,      //new data from a client or server
+newDataLocal = 2, //new data, send locally too
+eBadMsg = 3,      //error, newData msg couldnt be handled
+requestInst = 4,  //request the state of the instance window
 };
 /*
  data is sent in the format:
@@ -59,6 +62,38 @@ struct Message{
   uint8_t action;
   uint8_t winID;
   std::array<T, dataSize> data;
+};
+
+template <typename T>
+class WinMessage { //FIX: remove this class, added to Connector
+protected:
+  struct SpecMessage{
+    msgActions action;
+    uint8_t winID;
+    std::vector<T> data;
+  };
+//  SpecMessage recvMsg; //remove for std::unique_ptr ?
+//  SpecMessage sendMsg;
+public:
+  ~WinMessage() = default;
+  virtual void deSerialize(void* pData, size_t dataLen); 
+  /* Convert to C array and write to pipe for socket sending, 
+     override for struct or other specifc template T types */
+  virtual void serializeAndWrite(SpecMessage& msgStruct, int pipeWriteFD);
+};
+struct msgTypes{
+  template <typename T>
+  struct base{
+    msgActions action;
+    uint8_t winID;
+    std::vector<T> data;
+  };
+  //for use in T:
+  struct pointVal{
+    uint8_t x;
+    uint8_t y;
+    uint8_t val;
+  };
 };
 
 class ABserverClient{
@@ -88,15 +123,14 @@ protected:
 
 class Connector{
 public:
-  template <typename T, size_t dataSize>
-  int sendMsgStruct(bool sendLocal, Message<T, dataSize>& sendData);
+  template <typename T>
+  int sendMsgStruct(bool sendLocal, msgTypes::base<T>& sendData);
+  virtual void deSerialize(void* pData,const size_t dataLen) = 0;
   /* send data from one window to another locally */
-  int loopbackData();
   Connector(winVec_t& _vWindows);
   ~Connector();
   int endThread(bool restartT);
   /* send data to clients or server instance through thread */
-  int writeToPipe(char* buff,size_t bufflen);
 private:
   int pipeFD[2]; // [0] = read end FD, [1] = write end FD
   int startClientorInstance(bool isClient, bool replacePtr);
@@ -124,7 +158,7 @@ class Iwindow{
 public:
   virtual ~Iwindow() = default;
   virtual int drawScreen() = 0; //pure virtual
-  virtual void handleRecv(void* msgBuf, size_t n) = 0;
+  virtual void handleRecv(void* msgBuf, size_t n) = 0; //cant use Message struct here because no template virtual :(
   //virtual int updateFromRecv(char* buffer) = 0;
   bool cursorOnWindow(int y, int x);
   bool checkIfFit(const int desX, const int max_X);

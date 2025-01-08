@@ -1,5 +1,4 @@
 #include "tictactoe.hpp"
-#include <algorithm>
 #include <array>
 #include <asm-generic/socket.h>
 #include <cerrno>
@@ -81,10 +80,43 @@ int Connector::startClientorInstance(bool isClient, bool replacePtr){
   return 0;
 }
 
-//TODO: combine loopbackData() and writeToPipe() to this single func
-template <typename T, size_t dataSize>
-int Connector::sendMsgStruct(bool sendLocal, Message<T, dataSize>& sendData){
-  std::array<T, dataSize + 2> newMsg; //HACK: kinda unsure about this one...
+template<>
+void WinMessage<char>::serializeAndWrite(SpecMessage& msgStruct, int pipeWriteFD){
+  const int arrLen = msgStruct.data.size() + 2;
+  char* msgToSend = new char[arrLen];
+  msgToSend[0] = msgStruct.action; 
+  msgToSend[1] = msgStruct.winID; 
+  int i = 2;
+  for (char d : msgStruct.data){ //i really really doubt this will compile
+    msgToSend[i] = d;
+    i++;
+  }
+  write(pipeWriteFD, msgToSend, arrLen);
+  delete[] msgToSend;
+}
+
+template<>
+int Connector::sendMsgStruct<char>(bool sendLocal, msgTypes::base<char>& sendData){
+  const int arrLen = sendData.data.size() + 2;
+  char* msgToSend = new char[arrLen];
+  msgToSend[0] = sendData.action; 
+  msgToSend[1] = sendData.winID; 
+  int i = 2;
+  for (char d : sendData.data){
+    msgToSend[i] = d;
+    i++;
+  }
+  if (sendLocal){
+    for (std::unique_ptr<Iwindow>& _win : vWindows){
+      if (_win->id == sendData.winID){ //send data to the window off-thread first
+        _win->handleRecv(msgToSend,arrLen); //TODO: change to send struct instead
+      }
+    }
+  }
+  delete[] msgToSend;
+  return 0;
+  /*
+  std::vector<T> newMsg;
   newMsg[0] = sendData.action; 
   newMsg[1] = sendData.winID; 
   std::copy(sendData.data.begin(),sendData.data.end(),newMsg.at(2));
@@ -96,13 +128,7 @@ int Connector::sendMsgStruct(bool sendLocal, Message<T, dataSize>& sendData){
     }
   }
   write(pipeFD[1], newMsg.data(), newMsg.size());
-  return 0;
-  //return write(pipeFD[1], buff, bufflen);
-}
-
-int Connector::loopbackData(){
-
-  return 0;
+  */
 }
 
 int ABserverClient::startSocket(){
@@ -151,7 +177,7 @@ int Connector::endThread(bool restartT){
   serverClient->threadLoopRun = false;
   const size_t bufSize = 2;
   char buf[bufSize] = {'\0','\0'}; //EOM,\0
-  writeToPipe(buf, bufSize);
+  write(pipeFD[1], buf, bufSize);
   if (serverClient->tThread.joinable()){
     serverClient->tThread.join();
   }
@@ -160,10 +186,6 @@ int Connector::endThread(bool restartT){
                                  //nevermind it will be for disconnect
   }
   return 0;
-}
-
-int Connector::writeToPipe(char* buff,size_t bufflen){
-  return write(pipeFD[1], buff, bufflen);
 }
 
 void ABserverClient::mainLoop(winVec_t& _vWindows){
@@ -250,6 +272,7 @@ void ABserverClient::mainLoop(winVec_t& _vWindows){
 
                 }
               }
+              continue;
             }
           }
         }
@@ -343,12 +366,12 @@ Connector::ClientSocket::ClientSocket(int pipeReadFD, winVec_t& _vWindows)
 //destructors
 Connector::InstanceSocket::~InstanceSocket(){
   close(selfSocket);
-  delete conFDs;
+  delete[] conFDs;
 }
 
 Connector::ClientSocket::~ClientSocket(){
   close(selfSocket);
-  delete conFDs;
+  delete[] conFDs;
 }
 
 Connector::~Connector(){
