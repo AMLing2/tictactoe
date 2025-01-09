@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <csignal>
 #include <cstdint>
 #include <curses.h>
@@ -161,8 +162,11 @@ int inputLoop(winVec_t& vWindows, conn_t& pconn){
   int ch;
   char chChar;
   MEVENT mevent;
-  const size_t tempBuffN = 14; //temp
-  char tempBuff[tempBuffN] = {"helloooooooo!"};
+  msgTypes::base<char> tempMsg; //temp
+  tempMsg.action = msgActions::newData;
+  tempMsg.winID = 0;
+  std::string msgStr = "hellooo234";
+  std::copy(msgStr.begin(),msgStr.end(),std::back_inserter(tempMsg.data));
 
   while(mainLoopRun){
     ch = getch();
@@ -170,7 +174,7 @@ int inputLoop(winVec_t& vWindows, conn_t& pconn){
     & (ch != '\\') & (ch != '/')){ //could be abused?
       chChar = static_cast<char>(ch & 0xFF);
       passKbchar(chChar, vWindows);
-      if (pconn->writeToPipe(tempBuff,tempBuffN) < 0){
+      if (pconn->sendMsgStruct<char>(false,tempMsg) < 0){
         return 1;
       }
       continue;

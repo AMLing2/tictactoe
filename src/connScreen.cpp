@@ -59,3 +59,6 @@ int MainUI::drawScreen(){
 void MainUI::handleRecv(void* msgBuf, size_t n){
 
 }
+void MainUI::deSerialize(void* msgBuf, size_t n){
+
+}

@@ -55,6 +55,10 @@ void Tttgame::handleRecv(void* msgBuf, size_t n){
 
 }
 
+void Tttgame::deSerialize(void* msgBuf, size_t n){
+
+}
+
 void Tttgame::aiPlay(){
   
 }

@@ -47,52 +47,32 @@ ssize_t getDataSize(const ssize_t retnBytes);
 enum msgActions {
 endThread = 0,    //to self, end thread
 newData = 1,      //new data from a client or server
-newDataLocal = 2, //new data, send locally too
-eBadMsg = 3,      //error, newData msg couldnt be handled
-requestInst = 4,  //request the state of the instance window
+eBadMsg = 2,      //error, newData msg couldnt be handled
+requestInst = 3,  //request the state of the instance window
 };
 /*
  data is sent in the format:
  0:  [uint8_t action]
  1:  [uint8_t window ID]
- 2:  [std::array<uint8_t or char> window specific data]
+ 2:  [std::vector<char or specific struct> window specific data]
  */
-template <typename T, size_t dataSize>
-struct Message{
-  uint8_t action;
-  uint8_t winID;
-  std::array<T, dataSize> data;
-};
 
-template <typename T>
-class WinMessage { //FIX: remove this class, added to Connector
-protected:
-  struct SpecMessage{
-    msgActions action;
-    uint8_t winID;
-    std::vector<T> data;
-  };
-//  SpecMessage recvMsg; //remove for std::unique_ptr ?
-//  SpecMessage sendMsg;
-public:
-  ~WinMessage() = default;
-  virtual void deSerialize(void* pData, size_t dataLen); 
-  /* Convert to C array and write to pipe for socket sending, 
-     override for struct or other specifc template T types */
-  virtual void serializeAndWrite(SpecMessage& msgStruct, int pipeWriteFD);
-};
-struct msgTypes{
+struct msgTypes{ //i really like this but i dont think it can work :(((((
   template <typename T>
   struct base{
     msgActions action;
     uint8_t winID;
     std::vector<T> data;
   };
-  //for use in T:
+  //structs that can be used in T:
   struct pointVal{
     uint8_t x;
     uint8_t y;
     uint8_t val;
+  };
+  struct tttMsg{
+    uint8_t position; //0 - 8, 0 = top left, 8 = bottom right
+    bool moveWins; //client and instance both need to agree, a bit wierd? change to instance only?
   };
 };
 
@@ -125,7 +105,7 @@ class Connector{
 public:
   template <typename T>
   int sendMsgStruct(bool sendLocal, msgTypes::base<T>& sendData);
-  virtual void deSerialize(void* pData,const size_t dataLen) = 0;
+  //virtual void deSerialize(void* pData,const size_t dataLen) = 0; //remove
   /* send data from one window to another locally */
   Connector(winVec_t& _vWindows);
   ~Connector();
@@ -153,12 +133,12 @@ private:
   };
 };
 
-
 class Iwindow{
 public:
   virtual ~Iwindow() = default;
   virtual int drawScreen() = 0; //pure virtual
-  virtual void handleRecv(void* msgBuf, size_t n) = 0; //cant use Message struct here because no template virtual :(
+  virtual void handleRecv(void* msgBuf, size_t n) = 0;
+  virtual void deSerialize(void* msgBuf, size_t n) = 0;
   //virtual int updateFromRecv(char* buffer) = 0;
   bool cursorOnWindow(int y, int x);
   bool checkIfFit(const int desX, const int max_X);
@@ -186,6 +166,7 @@ public:
   //draws win/losses of players, connection screen and new window bar
   int drawScreen() override;
   void handleRecv(void* msgBuf, size_t n) override;
+  void deSerialize(void* msgBuf, size_t n) override;
 
 private:
   enum class connStates {
@@ -207,6 +188,7 @@ public:
   Tttgame(uint8_t _id, conn_t& _Conn);
   int drawScreen() override;
   void handleRecv(void* msgBuf, size_t n) override;
+  void deSerialize(void* msgBuf, size_t n) override;
   //int updateFromRecv(char* buffer) override { return 0; };//temp
   /*
    s: 0-8, where 0 is top left

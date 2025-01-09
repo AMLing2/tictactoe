@@ -80,57 +80,6 @@ int Connector::startClientorInstance(bool isClient, bool replacePtr){
   return 0;
 }
 
-template<>
-void WinMessage<char>::serializeAndWrite(SpecMessage& msgStruct, int pipeWriteFD){
-  const int arrLen = msgStruct.data.size() + 2;
-  char* msgToSend = new char[arrLen];
-  msgToSend[0] = msgStruct.action; 
-  msgToSend[1] = msgStruct.winID; 
-  int i = 2;
-  for (char d : msgStruct.data){ //i really really doubt this will compile
-    msgToSend[i] = d;
-    i++;
-  }
-  write(pipeWriteFD, msgToSend, arrLen);
-  delete[] msgToSend;
-}
-
-template<>
-int Connector::sendMsgStruct<char>(bool sendLocal, msgTypes::base<char>& sendData){
-  const int arrLen = sendData.data.size() + 2;
-  char* msgToSend = new char[arrLen];
-  msgToSend[0] = sendData.action; 
-  msgToSend[1] = sendData.winID; 
-  int i = 2;
-  for (char d : sendData.data){
-    msgToSend[i] = d;
-    i++;
-  }
-  if (sendLocal){
-    for (std::unique_ptr<Iwindow>& _win : vWindows){
-      if (_win->id == sendData.winID){ //send data to the window off-thread first
-        _win->handleRecv(msgToSend,arrLen); //TODO: change to send struct instead
-      }
-    }
-  }
-  delete[] msgToSend;
-  return 0;
-  /*
-  std::vector<T> newMsg;
-  newMsg[0] = sendData.action; 
-  newMsg[1] = sendData.winID; 
-  std::copy(sendData.data.begin(),sendData.data.end(),newMsg.at(2));
-  if (sendLocal){
-    for (std::unique_ptr<Iwindow>& _win : vWindows){
-      if (_win->id == sendData.winID){ //send data to the window off-thread first
-        _win->handleRecv(newMsg.data(),newMsg.size());
-      }
-    }
-  }
-  write(pipeFD[1], newMsg.data(), newMsg.size());
-  */
-}
-
 int ABserverClient::startSocket(){
 
   /*
@@ -251,9 +200,7 @@ void ABserverClient::mainLoop(winVec_t& _vWindows){
                   //FIX: temp
                   const std::lock_guard<std::mutex> lock(drawMtx);
                   move(1,1);
-                  for (size_t i = 0; i < bufRecvn; i++){
-                    addch(recvBuffer[i]);
-                  }
+                  addstr(std::string("hello\0").c_str());
                   refresh();
                 }
               }
@@ -378,4 +325,41 @@ Connector::~Connector(){
   close(pipeFD[0]);
   close(pipeFD[1]);
   endThread(false);
+}
+
+//message specific functions, move to own file?
+
+/* run in sendMsgStruct, checks if local and passes struct if it is*/
+int chkSendLocal(bool sendLocal,winVec_t& vWindows,int winID, void* msgBuf, size_t n){
+  //NOTE: really want to change this to being able to send a struct directly
+  //since currently it deserializes the struct only to serialize it again later
+  //which is pretty innefficient, if the message structs change from needing
+  //to use templates then this can probably be changed
+  if (!sendLocal){
+    return 1;
+  }
+  else{
+    for (std::unique_ptr<Iwindow>& _win : vWindows){
+      if (_win->id == winID){ //send data to the window off-thread first
+        _win->handleRecv(msgBuf,n);
+      }
+    }
+    return 0;
+  }
+}
+template<>
+int Connector::sendMsgStruct<char>(bool sendLocal, msgTypes::base<char>& sendData){
+  const int arrLen = sendData.data.size() + 2;
+  char* msgToSend = new char[arrLen]; //would be nice to do this without new
+  msgToSend[0] = sendData.action; 
+  msgToSend[1] = sendData.winID; 
+  int i = 2;
+  for (char d : sendData.data){
+    msgToSend[i] = d;
+    i++;
+  }
+  chkSendLocal(sendLocal, vWindows, sendData.winID, msgToSend, arrLen);
+  write(pipeFD[1], msgToSend, arrLen);
+  delete[] msgToSend;
+  return 0;
 }
