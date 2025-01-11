@@ -1,11 +1,13 @@
 #include "tictactoe.hpp"
+#include <algorithm>
 #include <cstdint>
+#include <iterator>
 #include <ncurses.h>
 #include <cmath>
 
 Tttgame::Tttgame(uint8_t _id, conn_t& _Conn) //FIX: really needs cleaning
-  :Iwindow(4 * 3 + 2,4 * 3 + 2,
-           winNames::tictactoe, _id, _Conn) //sqrSize *3 + 2
+  :Iwindow(_id,4 * 3 + 2,4 * 3 + 2,
+           winNames::tictactoe,  _Conn) //sqrSize *3 + 2
   //:Iwindow(sqrSize * 3 + 2,sqrSize * 3 + 2,
   //         winNames::tictactoe, _id, _Conn) //sqrSize *3 + 2
   {
@@ -50,15 +52,25 @@ int Tttgame::addToSpot(const uint8_t spot, const char c){
   }
 }
 
-
-void Tttgame::handleRecv(void* msgBuf, size_t n){
-
-}
-
-void Tttgame::deSerialize(void* msgBuf, size_t n){
-
+int Tttgame::handleRecv(std::array<uint8_t,BUFFSIZE_>& msgBuf, size_t msgBytes){
+  //NOTE: move struct conversion to function of iMSG?
+  if ((msgBytes < 3) | (msgBytes > BUFFSIZE_)){ //redundant check?
+    return  1;
+  }
+  iMsg::baseMsg<uint8_t> msgRecv;
+  msgRecv.action = static_cast<msgActions>(msgBuf[0]);
+  msgRecv.winID = msgBuf[1];//is there a point in filling in this?
+  std::copy(msgBuf.begin()+2,
+            msgBuf.begin()+msgBytes,
+            std::back_inserter(msgRecv.data)); //most likely just 1 byte for the pos
+  addToSpot(msgRecv.data[0],'X'); //'X' temporary?
+  return 0;
 }
 
 void Tttgame::aiPlay(){
   
+}
+
+void Tttgame::handleCursorPress(const int cursy,const int cursx){
+
 }

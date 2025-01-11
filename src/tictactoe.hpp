@@ -1,3 +1,9 @@
+/*
+TODO list:
+1. mainUI buttons
+2. sending whole instance data
+3. testing server with client
+*/
 #ifndef TICTACTOE
 #define TICTACTOE
 
@@ -44,11 +50,13 @@ struct ScreenLoc {
 
 /* Converts recieved bytes from recv() for use in dataSize input to Message struct*/
 ssize_t getDataSize(const ssize_t retnBytes);
-enum msgActions {
+enum msgActions { // change to uint8_t class enum?
 endThread = 0,    //to self, end thread
 newData = 1,      //new data from a client or server
 eBadMsg = 2,      //error, newData msg couldnt be handled
 requestInst = 3,  //request the state of the instance window
+instRespWin = 4,  //response to requestInst, tells what wins are open, winID = ignored
+instRespSpec = 5,  //response to requestInst, 1 or more msgs per open window
 };
 /*
  data is sent in the format:
@@ -56,7 +64,7 @@ requestInst = 3,  //request the state of the instance window
  1:  [uint8_t window ID]
  2:  [std::vector<char or specific struct> window specific data]
  */
-
+/*
 struct msgTypes{ //i really like this but i dont think it can work :(((((
   template <typename T>
   struct base{
@@ -75,6 +83,7 @@ struct msgTypes{ //i really like this but i dont think it can work :(((((
     bool moveWins; //client and instance both need to agree, a bit wierd? change to instance only?
   };
 };
+*/
 
 class ABserverClient{
 public:
@@ -101,10 +110,25 @@ protected:
   ABserverClient(bool isInstance_,int maxConns_, int pipeReadFD);
 };
 
+class iMsg{
+public:
+  //virtual void serializeMsg(void* msgBuf, size_t n) = 0; //part of Connector's sendMsgStruct
+  virtual int handleRecv(std::array<uint8_t,BUFFSIZE_>& msgBuf, size_t msgBytes) = 0;
+  //virtual void fullWinData() = 0; //TODO:
+  template <typename T>
+  struct baseMsg{
+    msgActions action;
+    uint8_t winID;
+    std::vector<T> data;
+  };
+protected:
+
+};
+
 class Connector{
 public:
   template <typename T>
-  int sendMsgStruct(bool sendLocal, msgTypes::base<T>& sendData);
+  int sendMsgStruct(bool sendLocal, iMsg::baseMsg<T>& sendData);
   //virtual void deSerialize(void* pData,const size_t dataLen) = 0; //remove
   /* send data from one window to another locally */
   Connector(winVec_t& _vWindows);
@@ -133,12 +157,12 @@ private:
   };
 };
 
-class Iwindow{
+
+class Iwindow : public iMsg{
 public:
   virtual ~Iwindow() = default;
   virtual int drawScreen() = 0; //pure virtual
-  virtual void handleRecv(void* msgBuf, size_t n) = 0;
-  virtual void deSerialize(void* msgBuf, size_t n) = 0;
+  virtual void handleCursorPress(const int cursy,const int cursx) = 0;
   //virtual int updateFromRecv(char* buffer) = 0;
   bool cursorOnWindow(int y, int x);
   bool checkIfFit(const int desX, const int max_X);
@@ -152,9 +176,9 @@ protected:
   ScreenLoc drawLoc;
   const winNames name;
   conn_t& conn;
-  Iwindow(int yReq,int xReq,winNames _name,uint8_t _id, conn_t& _Conn) //maybe move
-    :drawLoc(yReq, xReq)
-    ,id{_id}
+  Iwindow(uint8_t _id,int yReq,int xReq,winNames _name, conn_t& _Conn) //maybe move
+    :id{_id}
+    ,drawLoc(yReq, xReq)
     ,name{_name}
     ,conn{_Conn} {};
 };
@@ -165,8 +189,8 @@ public:
   //using state method design pattern for drawing
   //draws win/losses of players, connection screen and new window bar
   int drawScreen() override;
-  void handleRecv(void* msgBuf, size_t n) override;
-  void deSerialize(void* msgBuf, size_t n) override;
+  int handleRecv(std::array<uint8_t,BUFFSIZE_>& msgBuf, size_t msgBytes) override;
+  void handleCursorPress(const int cursy,const int cursx) override;
 
 private:
   enum class connStates {
@@ -187,8 +211,8 @@ class Tttgame : public Iwindow {
 public:
   Tttgame(uint8_t _id, conn_t& _Conn);
   int drawScreen() override;
-  void handleRecv(void* msgBuf, size_t n) override;
-  void deSerialize(void* msgBuf, size_t n) override;
+  int handleRecv(std::array<uint8_t,BUFFSIZE_>& msgBuf, size_t msgBytes) override;
+  void handleCursorPress(const int cursy,const int cursx) override;
   //int updateFromRecv(char* buffer) override { return 0; };//temp
   /*
    s: 0-8, where 0 is top left
@@ -202,5 +226,7 @@ private:
   int addToSpot(const uint8_t spot, const char c);
 };
 
+template<>
+int Connector::sendMsgStruct<uint8_t>(bool, iMsg::baseMsg<uint8_t>&);
 
 #endif  //TICTACTOE

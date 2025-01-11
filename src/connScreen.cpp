@@ -2,9 +2,15 @@
 #include <cstdint>
 #include <ncurses.h>
 #include <string>
+#include <vector>
+
+struct fieldData {
+  std::vector<std::string> userNames;
+  
+};
 
 MainUI::MainUI(uint8_t _id, conn_t& _Conn) //id will probably always be 0?
-  :Iwindow(9,30,winNames::mainUI, _id, _Conn) //just an estimate for now
+  :Iwindow(_id,9,30,winNames::mainUI,  _Conn) //just an estimate for now
   {
     inputStr.fill(' ');
   }
@@ -56,9 +62,10 @@ int MainUI::drawScreen(){
   return 0;
 }
 
-void MainUI::handleRecv(void* msgBuf, size_t n){
+int MainUI::handleRecv(std::array<uint8_t,BUFFSIZE_>& msgBuf, size_t msgBytes){
 
+  return 0;
 }
-void MainUI::deSerialize(void* msgBuf, size_t n){
+void MainUI::handleCursorPress(const int cursy,const int cursx){
 
 }

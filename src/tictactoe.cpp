@@ -143,7 +143,8 @@ void initGameScr(int& max_y, int& max_x)
   noecho();
   keypad(stdscr,true); //needed for mouse to work for some reason
   mmask_t mprev = mousemask(BUTTON1_RELEASED, NULL);//enable mouse L & R
-  mousemask(BUTTON3_RELEASED, &mprev); //3 = right btn
+  mprev = mousemask(BUTTON3_RELEASED, &mprev); //3 = right btn
+  mprev = mousemask(BUTTON2_RELEASED, &mprev); //3 = right btn
   scrollok(stdscr,true); //allow scrolling if terminal is too small
   
   if (true){ //fix has_color() returning false
@@ -162,7 +163,7 @@ int inputLoop(winVec_t& vWindows, conn_t& pconn){
   int ch;
   char chChar;
   MEVENT mevent;
-  msgTypes::base<char> tempMsg; //temp
+  iMsg::baseMsg<uint8_t> tempMsg; //temp
   tempMsg.action = msgActions::newData;
   tempMsg.winID = 0;
   std::string msgStr = "hellooo234";
@@ -174,7 +175,7 @@ int inputLoop(winVec_t& vWindows, conn_t& pconn){
     & (ch != '\\') & (ch != '/')){ //could be abused?
       chChar = static_cast<char>(ch & 0xFF);
       passKbchar(chChar, vWindows);
-      if (pconn->sendMsgStruct<char>(false,tempMsg) < 0){
+      if (pconn->sendMsgStruct<uint8_t>(false,tempMsg) < 0){
         return 1;
       }
       continue;
@@ -182,9 +183,10 @@ int inputLoop(winVec_t& vWindows, conn_t& pconn){
 
     switch (ch) {
       case KEY_MOUSE:{
+        move(mevent.y,mevent.x);
         if (getmouse(&mevent) == OK){
           if (mevent.bstate & BUTTON1_RELEASED){
-            move(mevent.y,mevent.x);
+            //move(mevent.y,mevent.x);
             refresh();
           }
         }

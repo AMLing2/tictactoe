@@ -1,8 +1,10 @@
 #include "tictactoe.hpp"
+#include <algorithm>
 #include <array>
 #include <asm-generic/socket.h>
 #include <cerrno>
 #include <cmath>
+#include <cstdint>
 #include <memory>
 #include <ncurses.h>
 #include <netinet/in.h>
@@ -213,7 +215,7 @@ void ABserverClient::mainLoop(winVec_t& _vWindows){
                 else {
                   for (std::unique_ptr<Iwindow>& _win : _vWindows){
                     if (_win->id == recvBuffer.at(2)){ //send data to the window off-thread first
-                      _win->handleRecv(recvBuffer.data(),bufRecvn);
+                      _win->handleRecv(recvBuffer,bufRecvn);
                     }
                   }
 
@@ -238,7 +240,7 @@ int ABserverClient::sendConnected(){
     return 1;
   }
   else{
-    for (int i = 1; i < conFDsn_cur; i++){
+    for (nfds_t i = 1; i < conFDsn_cur; i++){
       send(conFDs[i].fd, recvBuffer.data(), bufRecvn, 0);
     }
     return 0;
@@ -330,36 +332,59 @@ Connector::~Connector(){
 //message specific functions, move to own file?
 
 /* run in sendMsgStruct, checks if local and passes struct if it is*/
-int chkSendLocal(bool sendLocal,winVec_t& vWindows,int winID, void* msgBuf, size_t n){
   //NOTE: really want to change this to being able to send a struct directly
   //since currently it deserializes the struct only to serialize it again later
   //which is pretty innefficient, if the message structs change from needing
   //to use templates then this can probably be changed
+int chkSendLocal(const bool sendLocal,winVec_t& vWindows,
+                 const int winID, void* msgBuf,const int arrLen){
+  std::array<uint8_t, BUFFSIZE_> sendArr; //awful
+  uint8_t* msgint = reinterpret_cast<uint8_t*>(msgBuf);
+  std::copy_n(msgint,arrLen,sendArr.begin());
   if (!sendLocal){
     return 1;
   }
   else{
     for (std::unique_ptr<Iwindow>& _win : vWindows){
       if (_win->id == winID){ //send data to the window off-thread first
-        _win->handleRecv(msgBuf,n);
+        _win->handleRecv(sendArr,arrLen);
       }
     }
     return 0;
   }
 }
-template<>
-int Connector::sendMsgStruct<char>(bool sendLocal, msgTypes::base<char>& sendData){
+
+template <typename T> //no fucking clue why this dosent work
+int Connector::sendMsgStruct(bool sendLocal, iMsg::baseMsg<T>& sendData){
   const int arrLen = sendData.data.size() + 2;
-  char* msgToSend = new char[arrLen]; //would be nice to do this without new
+  T* msgToSend = new T[arrLen]; //would be nice to do this without new
   msgToSend[0] = sendData.action; 
   msgToSend[1] = sendData.winID; 
   int i = 2;
-  for (char d : sendData.data){
+  for (T d : sendData.data){
     msgToSend[i] = d;
     i++;
   }
-  chkSendLocal(sendLocal, vWindows, sendData.winID, msgToSend, arrLen);
+  chkSendLocal(sendLocal, vWindows, sendData.winID, msgToSend,arrLen);
   write(pipeFD[1], msgToSend, arrLen);
   delete[] msgToSend;
+  return 0;
+}
+
+template<>
+int Connector::sendMsgStruct<uint8_t>(bool sendLocal, iMsg::baseMsg<uint8_t>& sendData){
+  const int arrLen = sendData.data.size() + 2;
+  uint8_t* msgToSend = new uint8_t[arrLen]; //would be nice to do this without new
+  msgToSend[0] = sendData.action; 
+  msgToSend[1] = sendData.winID; 
+  int i = 2;
+  for (uint8_t d : sendData.data){
+    msgToSend[i] = d;
+    i++;
+  }
+  chkSendLocal(sendLocal, vWindows, sendData.winID, msgToSend,arrLen);
+  write(pipeFD[1], msgToSend, arrLen);
+  delete[] msgToSend;
+  return 0;
   return 0;
 }
