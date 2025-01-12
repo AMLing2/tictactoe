@@ -42,6 +42,7 @@ int Iwindow::moveWin(const int newY, const int newX){
 bool Iwindow::cursorOnWindow(int y, int x){
   if ( ((x >= drawLoc.x) & (x <= (drawLoc.x + drawLoc.reqX)))&
         ((y >= drawLoc.y) & (y <= (drawLoc.y + drawLoc.reqY)))){
+    handleCursorPress(y, x);
     return true;
   }
   else {
@@ -183,10 +184,13 @@ int inputLoop(winVec_t& vWindows, conn_t& pconn){
 
     switch (ch) {
       case KEY_MOUSE:{
-        move(mevent.y,mevent.x);
         if (getmouse(&mevent) == OK){
-          if (mevent.bstate & BUTTON1_RELEASED){
+          move(mevent.y,mevent.x);
+          if ((mevent.bstate & BUTTON1_RELEASED) | true){ // always for now
             //move(mevent.y,mevent.x);
+            for( std::unique_ptr<Iwindow>& scrWin : vWindows){
+              scrWin->cursorOnWindow(mevent.y,mevent.x);
+            }
             refresh();
           }
         }

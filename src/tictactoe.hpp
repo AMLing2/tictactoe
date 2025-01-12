@@ -125,8 +125,16 @@ protected:
 
 };
 
+enum class connStatusT {
+  clientNoConn,
+  clientConn,
+  instNoConn,
+  instConn
+};
+
 class Connector{
 public:
+  /* send data to clients or server instance through thread */
   template <typename T>
   int sendMsgStruct(bool sendLocal, iMsg::baseMsg<T>& sendData);
   //virtual void deSerialize(void* pData,const size_t dataLen) = 0; //remove
@@ -134,8 +142,9 @@ public:
   Connector(winVec_t& _vWindows);
   ~Connector();
   int endThread(bool restartT);
-  /* send data to clients or server instance through thread */
+  connStatusT getConnStatus(){ return connStatus; };
 private:
+  connStatusT connStatus;
   int pipeFD[2]; // [0] = read end FD, [1] = write end FD
   int startClientorInstance(bool isClient, bool replacePtr);
   winVec_t& vWindows;
@@ -193,13 +202,6 @@ public:
   void handleCursorPress(const int cursy,const int cursx) override;
 
 private:
-  enum class connStates {
-    unconnected,
-    waitingConn,
-    connected,
-    vsAI,
-  };
-  connStates state{connStates::unconnected};
   int attemptConnect();
   int wins{0};
   int losses{0};
@@ -219,7 +221,9 @@ public:
   */
   //~Tttgame(); 
 private:
+  std::atomic<bool> waitingPlayer = false;
   void aiPlay();
+  bool chkWin();
   std::array<char, 9> boardSpots;
   char lineChar;
   const int sqrSize{4}; //temp 4

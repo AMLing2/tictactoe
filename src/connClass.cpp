@@ -150,7 +150,8 @@ void ABserverClient::mainLoop(winVec_t& _vWindows){
     pollTimeout = -1; //-1 for infinite block
   } 
   else{
-    pollTimeout = TIMEOUT_;
+    //pollTimeout = TIMEOUT_;
+    pollTimeout = -1;
   }
 
   std::cout<<"mainloop thread starting"<<std::endl; //temp
@@ -158,7 +159,7 @@ void ABserverClient::mainLoop(winVec_t& _vWindows){
   while(threadLoopRun){
     pollRN = poll(conFDs, conFDsn_cur, pollTimeout);
     a++;
-    move(5,5);
+    move(0,0);
     addstr(std::to_string(a).c_str());
     refresh();
 
@@ -198,12 +199,6 @@ void ABserverClient::mainLoop(winVec_t& _vWindows){
                 }
                 else {  //data to be sent from a window
                   sendConnected();
-
-                  //FIX: temp
-                  const std::lock_guard<std::mutex> lock(drawMtx);
-                  move(1,1);
-                  addstr(std::string("hello\0").c_str());
-                  refresh();
                 }
               }
               else {//socket recv
@@ -282,7 +277,9 @@ int Connector::ClientSocket::acceptFunc(){
 }
 
 Connector::Connector(winVec_t& _vWindows)
-  :vWindows{_vWindows} {
+  :vWindows{_vWindows}
+  ,connStatus{connStatusT::clientNoConn}
+{
   std::cout<< "pipe R:" << pipe(pipeFD)<<std::endl; // should check err, but very rare
   startClientorInstance(true, false); //always start as client
 }
@@ -385,6 +382,5 @@ int Connector::sendMsgStruct<uint8_t>(bool sendLocal, iMsg::baseMsg<uint8_t>& se
   chkSendLocal(sendLocal, vWindows, sendData.winID, msgToSend,arrLen);
   write(pipeFD[1], msgToSend, arrLen);
   delete[] msgToSend;
-  return 0;
   return 0;
 }

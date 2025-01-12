@@ -23,14 +23,14 @@ void MainUI::drawInput(){// reqY is based on this or other sentences i guess
 }
 
 int MainUI::drawScreen(){
-  switch (state) {
-    case connStates::unconnected:{
+  switch (conn->getConnStatus()) {
+    case connStatusT::clientNoConn:{
       mvaddstr(drawLoc.y,drawLoc.x,"Disconnected");
       move(drawLoc.y+1,drawLoc.x);
       drawInput();
       break;
     }
-    case connStates::vsAI: {
+    case connStatusT::clientConn: {
       mvaddstr(drawLoc.y,drawLoc.x,"You: ");
       addstr(std::to_string(wins).c_str());
       mvaddstr(drawLoc.y+1,drawLoc.x,"AI: ");
@@ -41,11 +41,11 @@ int MainUI::drawScreen(){
 
       break;
     }
-    case connStates::waitingConn:{
+    case connStatusT::instNoConn:{
 
       break;
     }
-    case connStates::connected:{
+    case connStatusT::instConn:{
       move(drawLoc.y,drawLoc.x);
       addstr("You: ");
       addstr(std::to_string(wins).c_str());
